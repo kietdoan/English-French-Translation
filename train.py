@@ -75,7 +75,7 @@ def get_parser():
     parser.add_argument("--val_dir", type=str, required=True, help="Path to the validation dataset")
     parser.add_argument("--output_dir", type=str, default="./checkpoints", help="Directory to save model checkpoints")
     parser.add_argument("--log_dir", type=str, default="./logs", help="Directory to save training logs")
-
+    parser.add_argument("--checkpoint", type=str, default=None, help="Path to load checkpoint")
     # Miscellaneous
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
 
@@ -87,30 +87,6 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch):
     epoch_loss = 0
 
     progress_bar = tqdm.tqdm(dataloader, desc=f"Training Epoch {epoch}", leave=True)
-    # for batch in train_dataloader:
-    #     src = batch["src"].to(device)
-    #     tgt = batch["tgt"].to(device)
-    #     src_mask = batch["src_mask"].to(device)
-    #     tgt_mask = batch["tgt_mask"].to(device)
-
-    #     tgt_input = tgt[:, :-1]
-    #     tgt_output = tgt[:, 1:]
-
-    #     print("SRC Example:", src[0])
-    #     print("TGT Input Example:", tgt_input[0])
-    #     print("TGT Output Example:", tgt_output[0])
-
-    #     # Debugging src_mask
-    #     print("Source Mask Sample:")
-    #     print(src_mask[0, 0])  # Check shape and values
-
-    #     print("Combined Target Mask Sample:")
-    #     print(tgt_mask[0, 0])
-
-    #     logits = model(src, tgt_input, src_mask, tgt_mask)
-    #     print("Logits shape:", logits.shape)
-    #     print("Logits sample:", logits[0, -1, :5])  # Print first 5 values
-    #     break
 
     for batch_idx, batch in enumerate(progress_bar):
         src = batch["src"].to(device)
@@ -121,13 +97,6 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device, epoch):
         tgt_input = tgt[:, :-1]  # Teacher forcing input
         tgt_output = tgt[:, 1:]  # Expected output
         tgt_mask = tgt_mask[:, :, :-1, :-1]
-        
-        # print("src shape:", src.shape)
-        # print("tgt shape:", tgt.shape)
-        # print("src_mask shape:", src_mask.shape)
-        # print("tgt_mask shape:", tgt_mask.shape)
-        # print(src)
-        # print(tgt)
 
         # Forward pass
         logits = model(src, tgt_input, src_mask, tgt_mask)
@@ -218,7 +187,7 @@ if __name__ == "__main__":
         d_ff=args.d_ff,
         dropout=args.dropout
     ).to(device)
-
+    
     # Call the function after model initialization
     # check_embeddings(model, args.src_vocab_size, device)
     # Create optimizer and scheduler
@@ -237,6 +206,20 @@ if __name__ == "__main__":
     criterion = nn.CrossEntropyLoss(ignore_index=59513)  # Assuming 0 is the padding token
     # scheduler = get_warmup_scheduler(optimizer, warmup_steps=4000, total_steps=50000)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1000, gamma=0.9, verbose=True)
+
+    if args.checkpoint:
+        if os.path.exists(args.checkpoint):
+            print(f"Loading checkpoint from {args.checkpoint}...")
+            src_dummy = torch.randint(0, args.src_vocab_size, (1, args.max_length)).to(device)
+            tgt_dummy = torch.randint(0, args.tgt_vocab_size, (1, args.max_length)).to(device)
+            src_mask_dummy = torch.ones(1, 8, 1, args.max_length).to(device)
+            tgt_mask_dummy = torch.ones(1, 8, args.max_length, args.max_length).to(device)
+
+            with torch.no_grad():
+                model(src_dummy, tgt_dummy, src_mask_dummy, tgt_mask_dummy)
+                start_epoch = load_checkpoint(model, optimizer, scheduler, args.checkpoint) + 1
+        else:
+            print(f"Checkpoint {args.checkpoint} not found, starting from scratch.")
 
     # Training loop
     print(f"Starting training for {args.num_epochs} epochs...")
